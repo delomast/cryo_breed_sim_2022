@@ -116,10 +116,28 @@ runOCS <- function(ocsData, Gmat, N, Ne = 50){
 																			SEX=ifelse(Sex == "male", "M", "F"), 
 																			EBV=gebv, N_AS_PARENT=n) %>% 
 		select(ID, SEX, EBV, N_AS_PARENT) %>% filter(N_AS_PARENT > 0)
-	crosses <- allocate.mate.H(H = Gmat[ocsMatings2$ID, ocsMatings2$ID]*2, 
-														 parents = ocsMatings2, max_F = 1, method = "min_F")
+	crosses <- allocate.mate.H(H = Gmat[ocsMatings$ID, ocsMatings$ID]*2, 
+														 parents = ocsMatings, max_F = 1, method = "min_F")
 	
-	return(crosses)
+	return(crosses$optimal_families)
+}
+
+#' collapse a list of "Pop" class (alphaSimR) objects into one pop
+#' with just the selected individuals
+#' useful for breeding individuals across generations
+#' when generations are saved as different elements of a list
+#' and you want to reduce memory by avoiding combining all pops
+#' in there entirety
+#' @param pop_list list(pop1, pop2, pop3, ..., popN)
+#' @param indivs vector of individula id's that need to be in the new pop
+lowMem_mergePops <- function(pop_list, indivs){
+	temp_pop_list <- list()
+	for(i in 1:length(pop_list)){
+		temp_indivs <- indivs[indivs %in% pop_list[[i]]@id]
+		if(length(temp_indivs) > 0) temp_pop_list[[length(temp_pop_list) + 1]] <- 
+				pop_list[[i]][temp_indivs]
+	}
+	return(mergePops(temp_pop_list))
 }
 
 #' read in scrm output to load into AlphaSimR

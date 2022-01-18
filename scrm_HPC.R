@@ -16,6 +16,13 @@ library(rrBLUP, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 library(optiSel, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 library(AllocateMate, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 
+# library(AlphaSimR)
+# library(tidyverse)
+# library(rrBLUP)
+# library(optiSel)
+# library(AllocateMate)
+
+
 source("utils.R")
 
 cmdArgs <- commandArgs(trailingOnly=TRUE)
@@ -73,6 +80,27 @@ print("end simulating founders")
 
 if(any(sapply(haplo_list, nrow) != (nFound * 2))) stop("mismatch in number of founders and number of haplotypes from scrm")
 
+# For quick desktop testing
+# founderPop <- runMacs2(
+# 	nInd = 100,
+# 	nChr = 1,
+# 	segSites = 1000, # a discovery set that you then select SNPs from
+# 	Ne = 1000,
+# 	bp = 7e+07,
+# 	genLen = 1,
+# 	mutRate = 4e-08, # higher mutation rate to reflect presumed higher rate in oysters
+# 	histNe = c(1000, 1e+05),
+# 	histGen = c(100, 1e+06),
+# 	inbred = FALSE,
+# 	split = NULL,
+# 	ploidy = 2,
+# 	returnCommand = FALSE,
+# 	nThreads = NULL
+# )
+# SP$addTraitA(nQtlPerChr = 10)
+# SP$addSnpChip(nSnpPerChr = 100)
+
+
 founderPop <- newMapPop(genMap=genMap, haplotypes=haplo_list)
 SP <- SimParam$new(founderPop)
 SP$setTrackPed(isTrackPed = TRUE) # have AlphaSimR maintain pedigree records
@@ -123,20 +151,48 @@ for(gen in 1:nGenerations){
 	# make selections
 	print(Sys.time())
 	print("begin ocs")
+	
 	# OCS with lagrangian
-	selCands <- comp %>% filter(is.na(pheno)) %>% pull(id)
-	ocsData <- data.frame(Indiv = pop[[gen + 1]]@id, Sex = if_else(pop[[gen + 1]]@sex == "M", "male", "female")) %>%
-		left_join(data.frame(Indiv = names(gebv$g), gebv = gebv$g), by = "Indiv") %>%
-		filter(Indiv %in% selCands)
+	if(useCryo){
+		# here we will consider a cryo strategy of cryopreserving all males that are spawned
+		# candidates are all males that were previously spawned and all 
+		# non-phenotyped individuals in the current generation
+		
+		# all males previously spawned
+		allSires <- unique(SP$pedigree[,"father"])
+		allSires <- allSires[allSires != 0] # remove founder placeholder
+		
+		# all current selection candiates
+		selCands <- pop[[gen + 1]]@id
+		selCands <- selCands[!(selCands %in% trainPhenos$id)]
+		ocsData <- data.frame(Indiv = pop[[gen + 1]]@id, Sex = if_else(pop[[gen + 1]]@sex == "M", "male", "female")) %>%
+			filter(Indiv %in% selCands) %>% 
+			# and add cryo individuals
+			bind_rows(data.frame(Indiv = as.character(allSires), Sex = "male")) %>%
+			left_join(data.frame(Indiv = names(gebv$g), gebv = gebv$g), by = "Indiv")
+		
+	} else {
+		# not cryopreserving, so only selection candidates are the non-phenotyped
+		# individuals in the current generation
+		selCands <- pop[[gen + 1]]@id
+		selCands <- selCands[!(selCands %in% trainPhenos$id)]
+		ocsData <- data.frame(Indiv = pop[[gen + 1]]@id, Sex = if_else(pop[[gen + 1]]@sex == "M", "male", "female")) %>%
+			left_join(data.frame(Indiv = names(gebv$g), gebv = gebv$g), by = "Indiv") %>%
+			filter(Indiv %in% selCands)
+	}
+
 	matingPlan <- runOCS(ocsData = ocsData, Gmat = Amat[ocsData$Indiv,ocsData$Indiv], 
 											 N = nFound / 2, Ne = 50)
 	print(Sys.time())
 	print("end ocs")
 	
+	# Make combined pop to allow crosses across generations
+	tempCombBreedingPop <- lowMem_mergePops(pop_list = pop, indivs = unique(c(matingPlan[,1], matingPlan[,2])))
+	
 	# save mean genetic value and mean coancestry (weighted by contributions)
 	realizedContrib <- data.frame(id = c(matingPlan[,1], matingPlan[,2])) %>%
 		count(id) %>% mutate(contrib = n / sum(n)) %>% select(id, contrib)
-	genVal <- data.frame(id = pop[[gen + 1]]@id, gv = gv(pop[[gen + 1]])) %>%
+	genVal <- data.frame(id = tempCombBreedingPop@id, gv = gv(tempCombBreedingPop)) %>%
 		right_join(realizedContrib, by = "id") %>% mutate(gv = gv * contrib) %>%
 		pull(gv) %>% mean()
 	saveGenGain <- saveGenGain %>% rbind(data.frame(genNum = gen,
@@ -146,12 +202,12 @@ for(gen in 1:nGenerations){
 																						matrix(realizedContrib$contrib, nrow = 1) %*%
 																							(Amat[realizedContrib$id, realizedContrib$id] / 2) %*%
 																							matrix(realizedContrib$contrib, ncol = 1)
-																					)))
+																						)
+																					))
 	# create next generation
-	pop[[gen + 2]] <- makeCross(pop[[gen + 1]], crossPlan = as.matrix(matingPlan[,1:2]), nProgeny = nOffspringPerCross)
-	
-
-	
+	pop[[gen + 2]] <- makeCross(tempCombBreedingPop, 
+															crossPlan = as.matrix(matingPlan[,1:2]), 
+															nProgeny = nOffspringPerCross)
 }
 
 # save results

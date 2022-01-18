@@ -27,9 +27,9 @@ mkdir /90daydata/oyster_gs_sim/cryo/temp"$SLURM_ARRAY_TASK_ID"
 
 # run simulation WITH cryo
 # randomSeed iterationNumber TemporaryLocalStorageDirectory useCryo
-Rscript multGen_scrm_ai2_HPC.R $x $SLURM_ARRAY_TASK_ID /90daydata/oyster_gs_sim/cryo/temp"$SLURM_ARRAY_TASK_ID"/ TRUE
+Rscript scrm_HPC.R $x $SLURM_ARRAY_TASK_ID /90daydata/oyster_gs_sim/cryo/temp"$SLURM_ARRAY_TASK_ID"/ TRUE
 # and WITHOUT
-Rscript multGen_scrm_ai2_HPC.R $x $SLURM_ARRAY_TASK_ID /90daydata/oyster_gs_sim/cryo/temp"$SLURM_ARRAY_TASK_ID"/ FALSE
+Rscript scrm_HPC.R $x $SLURM_ARRAY_TASK_ID /90daydata/oyster_gs_sim/cryo/temp"$SLURM_ARRAY_TASK_ID"/ FALSE
 
 # remove temp directory
 rm -r /90daydata/oyster_gs_sim/cryo/temp"$SLURM_ARRAY_TASK_ID"
