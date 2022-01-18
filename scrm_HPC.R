@@ -30,7 +30,7 @@ cmdArgs <- commandArgs(trailingOnly=TRUE)
 # Script parameters given on the command line
 #' @param randSeed random seed to set R's random number generator
 #' @param iterationNumber used to set unique file output names
-randSeed <- cmdArgs[1]
+randSeed <- as.numeric(cmdArgs[1])
 iterationNumber <- cmdArgs[2]
 localTempDir <- cmdArgs[3]
 useCryo <- cmdArgs[4]
