@@ -119,7 +119,8 @@ baseAlleleFreqs <- colSums(snpGen) / (2*nrow(snpGen))
 
 # initial spawning
 pop[[2]] <- randCross(pop[[1]], nCrosses = nFound/2, nProgeny = nOffspringPerCross, balance = TRUE)
-
+# save.image("testing.rda")
+# load("testing.rda")
 trainPhenos <- data.frame()
 gebvRes <- data.frame()
 saveGenGain <- data.frame()
@@ -137,8 +138,38 @@ for(gen in 1:nGenerations){
 	Amat <- createG(g = g, af = baseAlleleFreqs) # G with first method of VanRaden (2008), also Endelman and Jannink (2012)
 	p <- data.frame(id = rownames(Amat)) %>% 
 		left_join(trainPhenos %>% select(id, Trait_1) %>% rename(pheno = Trait_1), by = "id") # hard coded for first trait
+	
+	head(p)
+	# coding so that all phenotypes are above 100, missing is 0, and including an overall mean
+	p %>% mutate(pheno = pheno + abs(min(min(pheno, na.rm = TRUE), 0)) + 100, pheno = replace_na(pheno, 0), mu = 1) %>%
+		select(id, mu, pheno) %>%
+		write.table("f90dat.txt", sep = " ", col.names = FALSE, row.names = FALSE, quote = FALSE)
+	g[1:5,1:5]
+	paste(g[1,1:5], collapse = "")
+	# g[,1] <- paste(rownames(g), g[,1])
+	rownames(g) <- paste0(rownames(g), " ")
+	write.table(g, "f90snp.txt", sep = "", col.names = FALSE, row.names = TRUE, quote = FALSE)
+	
+	# renumber file
+	cat("DATAFILE
+f90dat.txt
+TRAITS
+3
+FIELDS_PASSED TO OUTPUT
+
+WEIGHT(S)
+
+RESIDUAL_VARIANCE
+1.0
+EFFECT          # fixed effect, overall mean
+2 cross numer
+", file="renum.txt")
+system2(command = "../blupf90_1_19_2022/renumf90.exe", args = "renum.txt")
+	
+	
 	# predict genomic breeding values
 	gebv <- kin.blup(data = p, geno = "id", pheno = "pheno", K = Amat)
+
 	# NOTE: only using _current_ generation to calculate accuracy of gebvs
 	comp <- data.frame(id = pop[[gen + 1]]@id, gv = gv(pop[[gen + 1]])) %>% 
 		left_join(data.frame(id = names(gebv$g), gebv = gebv$g), by = "id") %>%
@@ -147,6 +178,12 @@ for(gen in 1:nGenerations){
 	gebvRes <- gebvRes %>% rbind(data.frame(genNum = gen,
 																					useCryo = useCryo, 
 																					acc = cor(comp$gv[is.na(comp$pheno)], comp$gebv[is.na(comp$pheno)])))
+	
+	gebv_s$U[[1]]$pheno
+	head(gebv$g[sort(names(gebv$g))])
+	head(gebv_s$U[[1]]$pheno[sort(names(gebv_s$U[[1]]$pheno))])
+	
+	summary(gebv$g[sort(names(gebv$g))] - gebv_s$U[[1]]$pheno[sort(names(gebv_s$U[[1]]$pheno))] )
 	
 	# make selections
 	print(Sys.time())
