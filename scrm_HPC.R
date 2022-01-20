@@ -12,7 +12,7 @@ print("begin")
 .libPaths(c(.libPaths(), "/project/oyster_gs_sim/R_packages/4.1/"))
 library(AlphaSimR, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 library(tidyverse, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
-library(rrBLUP, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
+# library(rrBLUP, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 library(optiSel, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 library(AllocateMate, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 
@@ -69,7 +69,7 @@ for(i in 1:nChr){
 													 localTempDir, randSeed + i, chrLen[i]))
 	# load in and subsample
 	haplo_list[[i]] <- read_scrm_transpose_for_AlphaSimR(paste0(localTempDir, "chr.txt"),
-													numLoci = qtlPerChr[i] + neutralPerChr[i], min_maf = 0.05, numLines = 20000, incr = 1/chrLen[i])
+																											 numLoci = qtlPerChr[i] + neutralPerChr[i], min_maf = 0.05, numLines = 20000, incr = 1/chrLen[i])
 	genMap[[i]] <- as.numeric(gsub("^pos_", "", colnames(haplo_list[[i]])))
 	# remove simulated haplotypes after loading in
 	file.remove(paste0(localTempDir, "chr.txt"))
@@ -117,6 +117,49 @@ snpGen <- pullSnpGeno(pop[[1]]) # founder SNP genotypes
 # save allele freqs in base pop for each panel for calculation of G
 baseAlleleFreqs <- colSums(snpGen) / (2*nrow(snpGen))
 
+# write out base pop freqs for blupf90
+write.table(cbind(1:length(baseAlleleFreqs), baseAlleleFreqs), 
+						paste0(localTempDir, "baseFreqs.txt"), 
+						sep = "", col.names = FALSE, row.names = FALSE, quote = FALSE)
+# write out parameter file for renumf90
+cat("DATAFILE
+", localTempDir, "f90dat.txt
+TRAITS
+3
+FIELDS_PASSED TO OUTPUT
+
+WEIGHT(S)
+
+RESIDUAL_VARIANCE
+2.0
+EFFECT          # first fixed effect, overall mean
+2 cross numer
+EFFECT           # first random effect (animal)
+1 cross alpha
+RANDOM           ## additive effect without pedigree
+animal
+SNP_FILE         ## SNP marker file
+", localTempDir, "f90snp.txt
+(CO)VARIANCES    ## its variance component
+1.0
+OPTION use_yams
+OPTION AlphaBeta 0.99 0.01
+OPTION tunedG 0
+OPTION whichG 1 # vanRaden 2008
+OPTION whichfreq 0 # use freqs from file
+OPTION FreqFile ", localTempDir, "baseFreqs.txt # file with frequencies (in same order as genotypes)
+OPTION whichfreqScale 0 # use freqs from file
+OPTION minfreq 0.0 # turning off all filters and checks
+OPTION monomorphic 0
+OPTION verify_parentage 0
+OPTION no_quality_control
+OPTION num_threads_pregs 2 # number of threads
+OPTION threshold_duplicate_samples 100 # effectively ignore
+OPTION high_threshold_diagonal_g 2 # effectively ignore
+OPTION low_threshold_diagonal_g 0.5 # effectively ignore
+", file=paste0(localTempDir, "renum.txt"), sep = "")
+
+
 # initial spawning
 pop[[2]] <- randCross(pop[[1]], nCrosses = nFound/2, nProgeny = nOffspringPerCross, balance = TRUE)
 # save.image("testing.rda")
@@ -135,55 +178,37 @@ for(gen in 1:nGenerations){
 	for(j in 2:length(pop)) g <- rbind(g, pullSnpGeno(pop[[j]]))
 	
 	# calc GEBVs
-	Amat <- createG(g = g, af = baseAlleleFreqs) # G with first method of VanRaden (2008), also Endelman and Jannink (2012)
-	p <- data.frame(id = rownames(Amat)) %>% 
+	p <- data.frame(id = rownames(g)) %>% 
 		left_join(trainPhenos %>% select(id, Trait_1) %>% rename(pheno = Trait_1), by = "id") # hard coded for first trait
 	
-	head(p)
+	# write out input for blupf90
+	# phenotypes
 	# coding so that all phenotypes are above 100, missing is 0, and including an overall mean
-	p %>% mutate(pheno = pheno + abs(min(min(pheno, na.rm = TRUE), 0)) + 100, pheno = replace_na(pheno, 0), mu = 1) %>%
-		select(id, mu, pheno) %>%
-		write.table("f90dat.txt", sep = " ", col.names = FALSE, row.names = FALSE, quote = FALSE)
-	g[1:5,1:5]
-	paste(g[1,1:5], collapse = "")
-	# g[,1] <- paste(rownames(g), g[,1])
-	rownames(g) <- paste0(rownames(g), " ")
-	write.table(g, "f90snp.txt", sep = "", col.names = FALSE, row.names = TRUE, quote = FALSE)
+	p %>% mutate(pheno = pheno + abs(min(min(pheno, na.rm = TRUE), 0)) + 100, mu = 1) %>%
+		filter(!is.na(pheno)) %>% select(id, mu, pheno) %>%
+		write.table(paste0(localTempDir, "f90dat.txt"), sep = " ", col.names = FALSE, row.names = FALSE, quote = FALSE)
+	# genotypes
+	rownames(g) <- paste0(pad_id(rownames(g)), " ")
+	write.table(g, paste0(localTempDir, "f90snp.txt"), sep = "", col.names = FALSE, row.names = TRUE, quote = FALSE)
 	
-	# renumber file
-	cat("DATAFILE
-f90dat.txt
-TRAITS
-3
-FIELDS_PASSED TO OUTPUT
-
-WEIGHT(S)
-
-RESIDUAL_VARIANCE
-1.0
-EFFECT          # fixed effect, overall mean
-2 cross numer
-", file="renum.txt")
-system2(command = "../blupf90_1_19_2022/renumf90.exe", args = "renum.txt")
+	# estimate gebvs with airemlf90
+	system2(command = "bash", args = c("run_blupf90.sh", localTempDir))
 	
+	# load in solutions
+	sol <- read.table(paste0(localTempDir, "solutions"), row.names = NULL, skip = 1) %>%
+		filter(V2 == 2) # get only animal effect
+	xref <- read.table(paste0(localTempDir, "f90snp.txt_XrefID"), row.names = NULL)
+	sol$levelNew <- xref$V2[match(sol$V3, xref$V1)] # append original name to solutions
 	
-	# predict genomic breeding values
-	gebv <- kin.blup(data = p, geno = "id", pheno = "pheno", K = Amat)
-
 	# NOTE: only using _current_ generation to calculate accuracy of gebvs
 	comp <- data.frame(id = pop[[gen + 1]]@id, gv = gv(pop[[gen + 1]])) %>% 
-		left_join(data.frame(id = names(gebv$g), gebv = gebv$g), by = "id") %>%
+		left_join(data.frame(id = sol$levelNew, gebv = sol$V4), by = "id") %>%
 		left_join(p, by = "id")
 	# calc accuracy of prediction and save
 	gebvRes <- gebvRes %>% rbind(data.frame(genNum = gen,
 																					useCryo = useCryo, 
+																					# only not phenotyped for calcuation of accuracy
 																					acc = cor(comp$gv[is.na(comp$pheno)], comp$gebv[is.na(comp$pheno)])))
-	
-	gebv_s$U[[1]]$pheno
-	head(gebv$g[sort(names(gebv$g))])
-	head(gebv_s$U[[1]]$pheno[sort(names(gebv_s$U[[1]]$pheno))])
-	
-	summary(gebv$g[sort(names(gebv$g))] - gebv_s$U[[1]]$pheno[sort(names(gebv_s$U[[1]]$pheno))] )
 	
 	# make selections
 	print(Sys.time())
@@ -217,7 +242,7 @@ system2(command = "../blupf90_1_19_2022/renumf90.exe", args = "renum.txt")
 			left_join(data.frame(Indiv = names(gebv$g), gebv = gebv$g), by = "Indiv") %>%
 			filter(Indiv %in% selCands)
 	}
-
+	
 	matingPlan <- runOCS(ocsData = ocsData, Gmat = Amat[ocsData$Indiv,ocsData$Indiv], 
 											 N = nFound / 2, Ne = 50)
 	print(Sys.time())
@@ -233,14 +258,14 @@ system2(command = "../blupf90_1_19_2022/renumf90.exe", args = "renum.txt")
 		right_join(realizedContrib, by = "id") %>% mutate(gv = gv * contrib) %>%
 		pull(gv) %>% mean()
 	saveGenGain <- saveGenGain %>% rbind(data.frame(genNum = gen,
-																					useCryo = useCryo, 
-																					genValue = genVal,
-																					coAncestry = as.vector(
-																						matrix(realizedContrib$contrib, nrow = 1) %*%
-																							(Amat[realizedContrib$id, realizedContrib$id] / 2) %*%
-																							matrix(realizedContrib$contrib, ncol = 1)
-																						)
-																					))
+																									useCryo = useCryo, 
+																									genValue = genVal,
+																									coAncestry = as.vector(
+																										matrix(realizedContrib$contrib, nrow = 1) %*%
+																											(Amat[realizedContrib$id, realizedContrib$id] / 2) %*%
+																											matrix(realizedContrib$contrib, ncol = 1)
+																									)
+	))
 	# create next generation
 	pop[[gen + 2]] <- makeCross(tempCombBreedingPop, 
 															crossPlan = as.matrix(matingPlan[,1:2]), 

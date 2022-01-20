@@ -1,3 +1,4 @@
+#!/bin/bash
 # simulate oyster chromosomes with scrm
 # single thread
 # output file name $5chr.txt
