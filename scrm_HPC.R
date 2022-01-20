@@ -120,7 +120,7 @@ baseAlleleFreqs <- colSums(snpGen) / (2*nrow(snpGen))
 # write out base pop freqs for blupf90
 write.table(cbind(1:length(baseAlleleFreqs), baseAlleleFreqs), 
 						paste0(localTempDir, "baseFreqs.txt"), 
-						sep = "", col.names = FALSE, row.names = FALSE, quote = FALSE)
+						sep = " ", col.names = FALSE, row.names = FALSE, quote = FALSE)
 # write out parameter file for renumf90
 cat("DATAFILE
 ", localTempDir, "f90dat.txt

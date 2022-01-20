@@ -3,6 +3,7 @@
 # running in shell script b/c output files
 # are written to working directory with no
 # option to change
+# and don't want to move R working directory around
 # 1 is working directory
 
 # load programs (ceres)
