@@ -190,7 +190,7 @@ for(gen in 1:nGenerations){
 	# genotypes
 	rownames(g) <- paste0(pad_id(rownames(g)), " ")
 	write.table(g, paste0(localTempDir, "f90snp.txt"), sep = "", col.names = FALSE, row.names = TRUE, quote = FALSE)
-	
+	rownames(g) <- gsub(" ", "", rownames(g)) # undo padding for blupf90 input
 	# estimate gebvs with airemlf90
 	system2(command = "bash", args = c("run_blupf90.sh", localTempDir))
 	
@@ -231,7 +231,7 @@ for(gen in 1:nGenerations){
 			filter(Indiv %in% selCands) %>% 
 			# and add cryo individuals
 			bind_rows(data.frame(Indiv = as.character(allSires), Sex = "male")) %>%
-			left_join(data.frame(Indiv = names(gebv$g), gebv = gebv$g), by = "Indiv")
+			left_join(data.frame(Indiv = as.character(sol$levelNew), gebv = sol$V4), by = "Indiv")
 		
 	} else {
 		# not cryopreserving, so only selection candidates are the non-phenotyped
@@ -239,10 +239,12 @@ for(gen in 1:nGenerations){
 		selCands <- pop[[gen + 1]]@id
 		selCands <- selCands[!(selCands %in% trainPhenos$id)]
 		ocsData <- data.frame(Indiv = pop[[gen + 1]]@id, Sex = if_else(pop[[gen + 1]]@sex == "M", "male", "female")) %>%
-			left_join(data.frame(Indiv = names(gebv$g), gebv = gebv$g), by = "Indiv") %>%
+			left_join(data.frame(Indiv = as.character(sol$levelNew), gebv = sol$V4), by = "Indiv") %>%
 			filter(Indiv %in% selCands)
 	}
-	
+
+	# make G for coancestry and inbreeding coefficients
+	Amat <- createG(g, af = baseAlleleFreqs)[ocsData$Indiv,ocsData$Indiv]
 	matingPlan <- runOCS(ocsData = ocsData, Gmat = Amat[ocsData$Indiv,ocsData$Indiv], 
 											 N = nFound / 2, Ne = 50)
 	print(Sys.time())
@@ -266,6 +268,7 @@ for(gen in 1:nGenerations){
 																											matrix(realizedContrib$contrib, ncol = 1)
 																									)
 	))
+	rm(Amat) # save some memory
 	# create next generation
 	pop[[gen + 2]] <- makeCross(tempCombBreedingPop, 
 															crossPlan = as.matrix(matingPlan[,1:2]), 
