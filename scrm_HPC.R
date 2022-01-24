@@ -45,7 +45,7 @@ nChr <- 10
 
 nFound <- 200
 nOffspringPerCross <- 50
-nGenerations <- 8
+nGenerations <- 6
 
 
 # simulate and genotypes from scrm (one chromosome at a time), load in,
