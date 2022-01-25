@@ -189,11 +189,9 @@ for(gen in 1:nGenerations){
 	# only include individuals that are either phenotyped, were selected, or are selection candidates
 	allParents<- unique(c(SP$pedigree[,"father"], SP$pedigree[,"mother"]))
 	allParents <- allParents[allParents != 0] # remove founder placeholder
-	# phenotyped, were selected, selection candidates
-	# for cryo, extra selection candidates are just the sires, so already in allParents 
-	g <- g[rownames(g) %in% unique(c(p$id, allParents, pop[[gen + 1]]@id)),] 
 	rownames(g) <- paste0(pad_id(rownames(g)), " ")
-	write.table(g, paste0(localTempDir, "f90snp.txt"), sep = "", col.names = FALSE, row.names = TRUE, quote = FALSE)
+	write.table(g[rownames(g) %in% unique(c(p$id, allParents, pop[[gen + 1]]@id)),], # phenotyped, were selected, selection candidates
+							paste0(localTempDir, "f90snp.txt"), sep = "", col.names = FALSE, row.names = TRUE, quote = FALSE)
 	rownames(g) <- gsub(" ", "", rownames(g)) # undo padding for blupf90 input
 	# estimate gebvs with airemlf90
 	system2(command = "bash", args = c("run_blupf90.sh", localTempDir))
@@ -248,7 +246,7 @@ for(gen in 1:nGenerations){
 	}
 	
 	# make G for coancestry and inbreeding coefficients
-	Amat <- createG(g[ocsData$Indiv,ocsData$Indiv], af = baseAlleleFreqs)
+	Amat <- createG(g[ocsData$Indiv,], af = baseAlleleFreqs)
 	matingPlan <- runOCS(ocsData = ocsData, Gmat = Amat[ocsData$Indiv,ocsData$Indiv], 
 											 N = nFound / 2, Ne = 50)
 
