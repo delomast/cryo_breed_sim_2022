@@ -12,16 +12,13 @@ print("begin")
 .libPaths(c(.libPaths(), "/project/oyster_gs_sim/R_packages/4.1/"))
 library(AlphaSimR, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 library(tidyverse, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
-# library(rrBLUP, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 library(optiSel, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 library(AllocateMate, lib.loc="/project/oyster_gs_sim/R_packages/4.1/")
 
 # library(AlphaSimR)
 # library(tidyverse)
-# library(rrBLUP)
 # library(optiSel)
 # library(AllocateMate)
-
 
 source("utils.R")
 
@@ -30,6 +27,8 @@ cmdArgs <- commandArgs(trailingOnly=TRUE)
 # Script parameters given on the command line
 #' @param randSeed random seed to set R's random number generator
 #' @param iterationNumber used to set unique file output names
+#' @param localTempDir local directory to use for temp files for this iteration
+#' @param useCryo TRUE to consider cryopreserved male candidates FALSE to not
 randSeed <- as.numeric(cmdArgs[1])
 iterationNumber <- cmdArgs[2]
 localTempDir <- cmdArgs[3]
@@ -242,11 +241,12 @@ for(gen in 1:nGenerations){
 			left_join(data.frame(Indiv = as.character(sol$levelNew), gebv = sol$V4), by = "Indiv") %>%
 			filter(Indiv %in% selCands)
 	}
-
+	
 	# make G for coancestry and inbreeding coefficients
 	Amat <- createG(g, af = baseAlleleFreqs)[ocsData$Indiv,ocsData$Indiv]
 	matingPlan <- runOCS(ocsData = ocsData, Gmat = Amat[ocsData$Indiv,ocsData$Indiv], 
 											 N = nFound / 2, Ne = 50)
+
 	print(Sys.time())
 	print("end ocs")
 	
