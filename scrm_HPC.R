@@ -189,10 +189,12 @@ for(gen in 1:nGenerations){
 	# only include individuals that are either phenotyped, were selected, or are selection candidates
 	allParents<- unique(c(SP$pedigree[,"father"], SP$pedigree[,"mother"]))
 	allParents <- allParents[allParents != 0] # remove founder placeholder
+	tempBool <- rownames(g) %in% unique(c(p$id, allParents, pop[[gen + 1]]@id)) # phenotyped, were selected, selection candidates
 	rownames(g) <- paste0(pad_id(rownames(g)), " ")
-	write.table(g[rownames(g) %in% unique(c(p$id, allParents, pop[[gen + 1]]@id)),], # phenotyped, were selected, selection candidates
+	write.table(g[tempBool,], 
 							paste0(localTempDir, "f90snp.txt"), sep = "", col.names = FALSE, row.names = TRUE, quote = FALSE)
 	rownames(g) <- gsub(" ", "", rownames(g)) # undo padding for blupf90 input
+	rm(tempBool)
 	# estimate gebvs with airemlf90
 	system2(command = "bash", args = c("run_blupf90.sh", localTempDir))
 	

@@ -122,6 +122,9 @@ runOCS <- function(ocsData, Gmat, N, Ne = 50){
 	# data processing
 	ocsCandes <- candes(phen = ocsData, N = N * 2, kin = Gmat)
 	# optimum contributions
+	# If run into problems where achieving the optimum contribution
+	# w/o repeating matings isn't possible, can put an upper bound on 
+	# contribution of each individual with the "ub" option in "con"
 	ocsContrib <- opticont(method = "max.gebv", cand = ocsCandes, 
 												 con = list(ub.kin = ubKin(kBar = ocsCandes$mean$kin, Ne = Ne)), 
 												 trace=FALSE)
