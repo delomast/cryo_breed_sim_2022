@@ -115,18 +115,22 @@ ubKin <- function(kBar, Ne, t0 = 0, t = 1, L = 1){
 #'   this to the coancestry matrix)
 #' @param N the number of matings to be performed
 #' @param Ne the desired minimum effective population size
-runOCS <- function(ocsData, Gmat, N, Ne = 50){
+#' @param kBar_max upper bound on kinship, if not specified, it is calculated
+#'   using all individuals in ocsData and Gmat (to calculate starting 
+#'   mean kinship) and Ne
+runOCS <- function(ocsData, Gmat, N, Ne = 50, kBar_max = NULL){
 	# convert to coancestry/kinship matrix
 	# and making sure order/presence of individuals is correct
 	Gmat <- Gmat[ocsData$Indiv,ocsData$Indiv] / 2
 	# data processing
 	ocsCandes <- candes(phen = ocsData, N = N * 2, kin = Gmat)
+	if(is.null(kBar_max)) kBar_max <- ubKin(kBar = ocsCandes$mean$kin, Ne = Ne) # default
 	# optimum contributions
 	# If run into problems where achieving the optimum contribution
 	# w/o repeating matings isn't possible, can put an upper bound on 
 	# contribution of each individual with the "ub" option in "con"
 	ocsContrib <- opticont(method = "max.gebv", cand = ocsCandes, 
-												 con = list(ub.kin = ubKin(kBar = ocsCandes$mean$kin, Ne = Ne)), 
+												 con = list(ub.kin = kBar_max), 
 												 trace=FALSE)
 	# calculate number of matings per individual from contribution proportions
 	ocsMatings <- calcNumMatings(ocsParent = ocsContrib$parent, N = N)

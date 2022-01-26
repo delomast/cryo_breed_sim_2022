@@ -116,6 +116,10 @@ snpGen <- pullSnpGeno(pop[[1]]) # founder SNP genotypes
 # save allele freqs in base pop for each panel for calculation of G
 baseAlleleFreqs <- colSums(snpGen) / (2*nrow(snpGen))
 
+Amat <- createG(snpGen, af = baseAlleleFreqs)
+kBar_0 <- mean(as.vector(Amat)) # starting mean coancestry (should be approx 0 in this specific simulation)
+rm(Amat)
+
 # write out base pop freqs for blupf90
 write.table(cbind(1:length(baseAlleleFreqs), baseAlleleFreqs), 
 						paste0(localTempDir, "baseFreqs.txt"), 
@@ -166,6 +170,7 @@ pop[[2]] <- randCross(pop[[1]], nCrosses = nFound/2, nProgeny = nOffspringPerCro
 trainPhenos <- data.frame()
 gebvRes <- data.frame()
 saveGenGain <- data.frame()
+selectedBrood <- data.frame()
 for(gen in 1:nGenerations){
 	print(Sys.time())
 	print(paste("begin gen: ", gen))
@@ -236,7 +241,6 @@ for(gen in 1:nGenerations){
 			# and add cryo individuals
 			bind_rows(data.frame(Indiv = as.character(allSires), Sex = "male")) %>%
 			left_join(data.frame(Indiv = as.character(sol$levelNew), gebv = sol$V4), by = "Indiv")
-		
 	} else {
 		# not cryopreserving, so only selection candidates are the non-phenotyped
 		# individuals in the current generation
@@ -246,11 +250,14 @@ for(gen in 1:nGenerations){
 			left_join(data.frame(Indiv = as.character(sol$levelNew), gebv = sol$V4), by = "Indiv") %>%
 			filter(Indiv %in% selCands)
 	}
-	
+
+	# calculate max mean coancestry (maintain Ne >= 50 over entire simulation)
+	kBar_max <- ubKin(kBar=kBar_0, Ne=50, t0 = 0, t = gen, L = 1)
+
 	# make G for coancestry and inbreeding coefficients
 	Amat <- createG(g[ocsData$Indiv,], af = baseAlleleFreqs)
 	matingPlan <- runOCS(ocsData = ocsData, Gmat = Amat[ocsData$Indiv,ocsData$Indiv], 
-											 N = nFound / 2, Ne = 50)
+											 N = nFound / 2, Ne = 50, kBar_max = kBar_max)
 
 	print(Sys.time())
 	print("end ocs")
@@ -263,7 +270,7 @@ for(gen in 1:nGenerations){
 		count(id) %>% mutate(contrib = n / sum(n)) %>% select(id, contrib)
 	genVal <- data.frame(id = tempCombBreedingPop@id, gv = gv(tempCombBreedingPop)) %>%
 		right_join(realizedContrib, by = "id") %>% mutate(gv = gv * contrib) %>%
-		pull(gv) %>% mean()
+		pull(gv) %>% sum()
 	saveGenGain <- saveGenGain %>% rbind(data.frame(genNum = gen,
 																									useCryo = useCryo, 
 																									genValue = genVal,
@@ -273,11 +280,23 @@ for(gen in 1:nGenerations){
 																											matrix(realizedContrib$contrib, ncol = 1)
 																									)
 	))
+	
+	selectedBrood <- selectedBrood %>% 
+		rbind(data.frame(genNum = gen,
+										useCryo = useCryo,
+										Indiv = c(matingPlan[,1], matingPlan[,2])) %>% 
+				 	distinct() %>% left_join(ocsData, by = "Indiv") %>% 
+				 	mutate(spState = if_else(Indiv %in% pop[[gen + 1]]@id, "fresh", "cryo"),
+				 		meanCoan = as.vector(apply(Amat[Indiv,Indiv] / 2, 1, mean)))
+		)
+	
 	rm(Amat) # save some memory
 	# create next generation
-	pop[[gen + 2]] <- makeCross(tempCombBreedingPop, 
-															crossPlan = as.matrix(matingPlan[,1:2]), 
-															nProgeny = nOffspringPerCross)
+	if(gen < nGenerations){
+		pop[[gen + 2]] <- makeCross(tempCombBreedingPop, 
+																crossPlan = as.matrix(matingPlan[,2:1]), # female in first col, male in second
+																nProgeny = nOffspringPerCross)
+	}
 }
 
 # save results
