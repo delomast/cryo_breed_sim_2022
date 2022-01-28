@@ -300,6 +300,7 @@ for(gen in 1:nGenerations){
 }
 
 # save results
-save.image(paste0("cryo_", iterationNumber, "_", useCryo, ".rda"))
+# save everything for initial testing
+# save.image(paste0("cryo_", iterationNumber, "_", useCryo, ".rda"))
 # for low memory use
-# save(snpGen, saveGenGain, gebvRes, selectedBrood, file = paste0("cryo_", iterationNumber, "_", useCryo, ".rda"))
+save(snpGen, saveGenGain, gebvRes, selectedBrood, cmdArgs, file = paste0("cryo_", iterationNumber, "_", useCryo, ".rda"))
